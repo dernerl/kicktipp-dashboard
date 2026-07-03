@@ -70,5 +70,6 @@ jobs:
               --access private \
               --allow-overwrite \
               --rw-token "$BLOB_READ_WRITE_TOKEN" \
-              --store-id "${{ secrets.BLOB_STORE_ID }}"
+              --store-id "${{ secrets.BLOB_STORE_ID }}" \
+              --token "${{ secrets.VERCEL_TOKEN }}"
           done

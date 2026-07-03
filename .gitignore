@@ -32,3 +32,4 @@ debug-*.html
 # committing them, so no Tippkreis data ever touches this repo. See ADR 0010
 # (supersedes the git-commit approach from ADR 0009).
 data/
+.vercel
