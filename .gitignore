@@ -1,0 +1,32 @@
+# Secrets / local config
+.env
+.env.local
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+.uv/
+
+# Logs and debug artifacts
+*.log
+debug-*.html
+*.bak
+
+# macOS
+.DS_Store
+
+# Note: data/ is intentionally tracked, not ignored — the GitHub Actions cron
+# commits data/*.jsonl + status.json back to main; that's the persistence
+# layer the hosted Vercel dashboard reads from. See docs/adr/0009.

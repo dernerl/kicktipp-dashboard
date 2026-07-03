@@ -1,0 +1,10 @@
+[project]
+name = "kicktipp-dashboard"
+version = "0.1.0"
+description = "Kicktipp tipping bot (LLM strategy), score tracking, and hosted results dashboard"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.32",
+    "beautifulsoup4>=4.12",
+    "python-dotenv>=1.0",
+]

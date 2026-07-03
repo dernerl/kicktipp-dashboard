@@ -1,0 +1,73 @@
+name: Kicktipp Bot
+
+# Replaces the local launchd cron (com.kicktipp-ai.bot.plist) — see ADR 0009.
+# Runs the llm-strategy bot, refreshes the dashboard's ranking/odds history,
+# and commits data/*.jsonl back to main so the hosted (Vercel) dashboard picks
+# up fresh data on every push.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install Python dependencies
+        run: uv sync
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run bot (submit tips, capture odds, update scores)
+        env:
+          KICKTIPP_EMAIL: ${{ secrets.KICKTIPP_EMAIL }}
+          KICKTIPP_PASSWORD: ${{ secrets.KICKTIPP_PASSWORD }}
+          KICKTIPP_COMMUNITY: ${{ secrets.KICKTIPP_COMMUNITY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: uv run python main.py --strategy llm --max-hours-ahead 30
+
+      - name: Rebuild dashboard ranking history
+        env:
+          KICKTIPP_EMAIL: ${{ secrets.KICKTIPP_EMAIL }}
+          KICKTIPP_PASSWORD: ${{ secrets.KICKTIPP_PASSWORD }}
+          KICKTIPP_COMMUNITY: ${{ secrets.KICKTIPP_COMMUNITY }}
+        run: uv run python ranking_history.py
+
+      - name: Write cron heartbeat
+        if: always()
+        run: |
+          mkdir -p data
+          if [ "${{ job.status }}" = "success" ]; then ok=true; else ok=false; fi
+          printf '{"last_attempt_at": "%s", "ok": %s}\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" > data/status.json
+
+      # Uses the default GITHUB_TOKEN; this push intentionally will not
+      # re-trigger this same workflow (GitHub Actions doesn't chain workflow
+      # runs from GITHUB_TOKEN-authored pushes), but it does trigger Vercel's
+      # git integration to redeploy the dashboard with fresh data.
+      - name: Commit and push data
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No data changes to commit"
+          else
+            git commit -m "chore: refresh kicktipp bot data $(date -u +%Y-%m-%d)"
+            git push
+          fi

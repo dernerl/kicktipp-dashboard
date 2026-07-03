@@ -1,0 +1,3 @@
+# Scoped to api/ so Vercel's Python build doesn't also install the bot/MCP
+# dependencies from the repo-root requirements.txt (requests, beautifulsoup4,
+# mcp) — dashboard_data.py and awards.py are stdlib-only. See ADR 0009.
