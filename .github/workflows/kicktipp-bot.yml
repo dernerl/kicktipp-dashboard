@@ -2,16 +2,15 @@ name: Kicktipp Bot
 
 # Replaces the local launchd cron (com.kicktipp-ai.bot.plist) — see ADR 0009.
 # Runs the llm-strategy bot, refreshes the dashboard's ranking/odds history,
-# and commits data/*.jsonl back to main so the hosted (Vercel) dashboard picks
-# up fresh data on every push.
+# and uploads data/*.jsonl to a private Vercel Blob store so the hosted
+# dashboard (api/data.py) can read it without any Tippkreis data ever
+# touching this (potentially public/template) repo's git history — see
+# ADR 0010.
 
 on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   run-bot:
@@ -29,8 +28,8 @@ jobs:
       - name: Install Python dependencies
         run: uv sync
 
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Install Claude Code CLI and Vercel CLI
+        run: npm install -g @anthropic-ai/claude-code vercel
 
       - name: Run bot (submit tips, capture odds, update scores)
         env:
@@ -55,19 +54,21 @@ jobs:
           printf '{"last_attempt_at": "%s", "ok": %s}\n' \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" > data/status.json
 
-      # Uses the default GITHUB_TOKEN; this push intentionally will not
-      # re-trigger this same workflow (GitHub Actions doesn't chain workflow
-      # runs from GITHUB_TOKEN-authored pushes), but it does trigger Vercel's
-      # git integration to redeploy the dashboard with fresh data.
-      - name: Commit and push data
+      # Uploads whichever data/*.jsonl files exist to the private Blob store
+      # under data/<filename> — matching the pathnames dashboard_data.py
+      # expects. --allow-overwrite because these files evolve run over run;
+      # --access private means no public URL is ever generated for them.
+      - name: Upload data to Vercel Blob
         if: always()
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/
-          if git diff --staged --quiet; then
-            echo "No data changes to commit"
-          else
-            git commit -m "chore: refresh kicktipp bot data $(date -u +%Y-%m-%d)"
-            git push
-          fi
+          for f in data/*.jsonl data/status.json; do
+            [ -f "$f" ] || continue
+            vercel blob put "$f" \
+              --pathname "data/$(basename "$f")" \
+              --access private \
+              --allow-overwrite \
+              --rw-token "$BLOB_READ_WRITE_TOKEN" \
+              --store-id "${{ secrets.BLOB_STORE_ID }}"
+          done

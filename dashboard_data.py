@@ -2,44 +2,82 @@
 
 Used by both the local dev server (``dashboard.py``, full payload incl. the
 personal section) and the hosted read-only deployment (``api/data.py`` on
-Vercel, community-only — see ADR 0009). Pure functions only: no HTTP, no live
-Kicktipp access, no import-time side effects, so it's safe to import from a
-serverless function.
+Vercel, community-only — see ADR 0009). Pure functions only: no live Kicktipp
+access, no import-time side effects, so it's safe to import from a serverless
+function. Reading data does use HTTP when BLOB_STORE_ID/BLOB_READ_WRITE_TOKEN
+are set (hosted deployment, see ADR 0010) — locally those are unset, so it
+falls back to plain files under data/, unchanged.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from logparse import parse_log
 
 ROOT = Path(__file__).parent
-TIPS_PATH = ROOT / "data" / "tips_history.jsonl"
-RANKING_PATH = ROOT / "data" / "ranking_history.jsonl"
-STEPS_PATH = ROOT / "data" / "ranking_steps.jsonl"
-COMMUNITY_TIPS_PATH = ROOT / "data" / "community_tips.jsonl"
-ODDS_PATH = ROOT / "data" / "odds_history.jsonl"
-STATUS_PATH = ROOT / "data" / "status.json"
+
+TIPS_PATH = "tips_history.jsonl"
+RANKING_PATH = "ranking_history.jsonl"
+STEPS_PATH = "ranking_steps.jsonl"
+COMMUNITY_TIPS_PATH = "community_tips.jsonl"
+ODDS_PATH = "odds_history.jsonl"
+STATUS_PATH = "status.json"
+
+BLOB_STORE_ID = os.environ.get("BLOB_STORE_ID")
+BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
 
 
-def _read_jsonl(path: Path) -> list[dict]:
+def _fetch_blob(name: str) -> str | None:
+    """Fetch a private Vercel Blob's raw text, or None if Blob isn't configured.
+
+    Returns "" (not None) for a 404 — the file just hasn't been written yet by
+    the first bot run, which isn't an error.
+    """
+    if not (BLOB_STORE_ID and BLOB_READ_WRITE_TOKEN):
+        return None
+    url = f"https://{BLOB_STORE_ID}.private.blob.vercel-storage.com/data/{name}"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return ""
+        raise
+
+
+def _read_data_file(name: str) -> str:
+    blob_text = _fetch_blob(name)
+    if blob_text is not None:
+        return blob_text
+    path = ROOT / "data" / name
     if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _read_jsonl(name: str) -> list[dict]:
+    text = _read_data_file(name)
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
 def _read_status() -> dict | None:
-    """Cron heartbeat written by the GitHub Actions workflow (ADR 0009).
+    """Cron heartbeat written by the GitHub Actions workflow (ADR 0009/0010).
 
-    Missing locally until the workflow has run at least once — that's fine,
-    the frontend just skips the staleness banner when this is null.
+    Missing until the workflow has run at least once — that's fine, the
+    frontend just skips the staleness banner when this is null.
     """
-    if not STATUS_PATH.exists():
+    text = _read_data_file(STATUS_PATH)
+    if not text.strip():
         return None
     try:
-        return json.loads(STATUS_PATH.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        return json.loads(text)
+    except json.JSONDecodeError:
         return None
 
 

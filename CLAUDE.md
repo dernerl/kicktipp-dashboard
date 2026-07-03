@@ -43,11 +43,18 @@ running and displaying this Tippkreis's automation.
   run; `odds_history.backfill_odds` pulls the real historical odds for all Spieltage in one
   pass (`KicktippClient.fetch_all_odds`). Stored in `data/odds_history.jsonl`. (Earlier docs
   wrongly claimed odds couldn't be backfilled — see ADR 0007.)
-- **`data/` is tracked, not gitignored.** The GitHub Actions workflow commits
-  `data/*.jsonl` (+ `data/status.json`) back to `main` on every run — that's
-  the persistence layer the hosted Vercel dashboard reads from. See ADR 0009.
-  This does **not** include `~/Library/Logs/kicktipp-ai.log` (Claude's
-  reasoning) — that file only ever exists locally and is never committed.
+- **`data/` is gitignored — never committed, on purpose.** The GitHub Actions
+  workflow uploads `data/*.jsonl` (+ `data/status.json`) to a **private Vercel
+  Blob store** after every run instead of committing them (see ADR 0010,
+  supersedes the git-commit approach in ADR 0009 — that approach briefly
+  leaked real Tippkreis data into this repo's public git history before being
+  reverted). `dashboard_data._read_data_file()` fetches from Blob when
+  `BLOB_STORE_ID`/`BLOB_READ_WRITE_TOKEN` are set (hosted deployment), else
+  falls back to local files (local dev, unchanged). Never reintroduce a path
+  where Tippkreis data gets committed to this repo — that's the whole point
+  of this repo being safely forkable/template-able. This also does **not**
+  include `~/Library/Logs/kicktipp-ai.log` (Claude's reasoning) — that file
+  only ever exists locally and is never committed or uploaded anywhere.
 - **Personal section stays local, structurally not just visually.**
   `dashboard_data.build_payload(include_personal=False)` (used by `api/data.py`)
   skips computing `tips`/`summary`/reasoning entirely rather than hiding them in

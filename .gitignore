@@ -27,6 +27,8 @@ debug-*.html
 # macOS
 .DS_Store
 
-# Note: data/ is intentionally tracked, not ignored — the GitHub Actions cron
-# commits data/*.jsonl + status.json back to main; that's the persistence
-# layer the hosted Vercel dashboard reads from. See docs/adr/0009.
+# Runtime data — regenerable locally. The GitHub Actions cron uploads
+# data/*.jsonl + status.json to a private Vercel Blob store instead of
+# committing them, so no Tippkreis data ever touches this repo. See ADR 0010
+# (supersedes the git-commit approach from ADR 0009).
+data/

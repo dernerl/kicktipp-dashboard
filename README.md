@@ -109,19 +109,27 @@ tail -f ~/Library/Logs/kicktipp-ai.log
 ### Scheduled runs (GitHub Actions)
 
 `.github/workflows/kicktipp-bot.yml` runs the bot on the same 6-hourly schedule
-without needing your machine to be on. It commits `data/*.jsonl` back to `main`
-after each run, which also feeds the hosted dashboard (see below). See ADR 0009.
+without needing your machine to be on. After each run it uploads
+`data/*.jsonl` + `data/status.json` to a **private Vercel Blob store**, which
+the hosted dashboard (see below) reads from — no Tippkreis data ever touches
+this repo's git history, so it stays safe to make public/use as a template.
+See ADR 0010 (supersedes the git-commit approach in ADR 0009).
 
 Setup:
 
-1. Repo secrets (Settings → Secrets and variables → Actions):
-   `KICKTIPP_EMAIL`, `KICKTIPP_PASSWORD`, `KICKTIPP_COMMUNITY`, and
+1. Create a private Blob store: in your Vercel project → Storage tab →
+   Create Database → Blob → access **Private**. Note the store ID and the
+   `BLOB_READ_WRITE_TOKEN` it generates.
+2. Repo secrets (Settings → Secrets and variables → Actions):
+   `KICKTIPP_EMAIL`, `KICKTIPP_PASSWORD`, `KICKTIPP_COMMUNITY`,
    `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`, run locally under your
    logged-in Pro/Max account — valid for 1 year, keeps billing on your
-   subscription instead of the pay-per-token API).
-2. Settings → Actions → General → Workflow permissions → "Read and write
-   permissions" (needed for the workflow to push the data commit).
-3. Trigger a manual run once (Actions tab → "Kicktipp Bot" → Run workflow) to
+   subscription instead of the pay-per-token API), `BLOB_READ_WRITE_TOKEN`,
+   and `BLOB_STORE_ID`.
+3. Add the same `BLOB_READ_WRITE_TOKEN` and `BLOB_STORE_ID` as **Vercel**
+   environment variables too (Project → Settings → Environment Variables) —
+   `api/data.py` needs them to read the data back out.
+4. Trigger a manual run once (Actions tab → "Kicktipp Bot" → Run workflow) to
    confirm it works before relying on the schedule.
 
 A `data/status.json` heartbeat is written on every attempt, success or not —
@@ -215,10 +223,13 @@ never computes it, and it can't include the Claude reasoning either way since
 that only ever lives in your local launchd log). See ADR 0009.
 
 Setup: connect this repo to a new Vercel project (framework preset "Other", no
-build command needed — `vercel.json` handles routing). No secrets required;
-`api/data.py` only reads the `data/*.jsonl` files the GitHub Actions workflow
-already commits. Every push to `main` (including the bot's own data-refresh
-commits) triggers a redeploy.
+build command needed — `vercel.json` handles routing). `api/data.py` reads
+`data/*.jsonl` from the private Vercel Blob store the GitHub Actions workflow
+uploads to (see the GitHub Actions setup above) — add `BLOB_READ_WRITE_TOKEN`
+and `BLOB_STORE_ID` as Vercel project environment variables too, otherwise
+the deployed function has no way to read the data. Since data lives in Blob,
+not in this repo, pushes to `main` no longer carry any Tippkreis data with
+them — deploy whenever you push code changes.
 
 ## Project layout
 
