@@ -155,9 +155,10 @@ available — use them directly, no need to search for odds separately.
 {match_list}
 
 ## Scoring system (important for strategy)
-- 3 points: exact score correct
-- 2 points: correct goal difference (but wrong score)
-- 1 point: correct tendency (winner/draw) only
+This Tipprunde uses a non-standard scheme — NOT the usual Kicktipp 3/2/1:
+- 4 points: exact score correct
+- 3 points: correct goal difference, but not an exact draw (e.g. tip 2:1, result 3:2)
+- 2 points: correct tendency only — includes a correct-but-inexact draw (e.g. tip 1:1, result 2:2)
 - 0 points: wrong tendency
 
 ## Your task
@@ -175,7 +176,7 @@ Then reason about which EXACT score is most likely — not just who wins. Think 
 - Close matches (odds > 1.80 for the favorite): consider 1:1 or 1:0
 - Does the score matter for group advancement? Teams already through may rotate and concede more.
 
-Most Kicktipp players will pick the obvious favorite to win 2:0. You score big by finding the correct exact result when it differs from the crowd — but getting the tendency right is worth more than a creative miss, so don't sacrifice the safe 1-2 points chasing a contrarian exact score.
+Most Kicktipp players will pick the obvious favorite to win 2:0. You score big by finding the correct exact result when it differs from the crowd — but getting the tendency right is worth more than a creative miss, so don't sacrifice the safe 2 points chasing a contrarian exact score.
 
 Output exactly one JSON array as the very last line of your response — one object per match in the same order:
 [{{"home": 2, "away": 1}}, {{"home": 0, "away": 0}}]
