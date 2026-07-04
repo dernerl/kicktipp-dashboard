@@ -63,7 +63,7 @@ jobs:
         env:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
         run: |
-          for f in data/*.jsonl data/status.json; do
+          for f in data/*.jsonl data/status.json data/community_name.json; do
             [ -f "$f" ] || continue
             vercel blob put "$f" \
               --pathname "data/$(basename "$f")" \
