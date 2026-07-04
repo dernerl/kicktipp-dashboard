@@ -97,7 +97,7 @@ def build_standing_context(ranking: list[RankingEntry]) -> str:
     """Summarise the current leaderboard so the LLM can calibrate risk.
 
     Trailing by a lot late in the tournament favors chasing exact scores
-    (3 pts) over safe tendency picks (1 pt); leading favors the opposite.
+    (4 pts) over safe tendency picks (2 pts); leading favors the opposite.
     """
     if not ranking:
         return ""
@@ -129,8 +129,8 @@ def build_standing_context(ranking: list[RankingEntry]) -> str:
         )
     lines.append(
         "  Strategie-Hinweis: bei großem Rückstand lohnen sich riskantere "
-        "Tipps auf exakte Ergebnisse (3 Pkt); bei knappem Vorsprung lieber "
-        "sichere Tendenz-Tipps (mind. 1 Pkt) bevorzugen."
+        "Tipps auf exakte Ergebnisse (4 Pkt); bei knappem Vorsprung lieber "
+        "sichere Tendenz-Tipps (mind. 2 Pkt) bevorzugen."
     )
     return "\n".join(lines)
 

@@ -248,6 +248,21 @@ class KicktippClient:
         resp.raise_for_status()
         return parse_ranking(resp.text)
 
+    def fetch_community_name(self) -> str:
+        """The Tippkreis's real display name (e.g. "WM-Tipp (von Mischa)"),
+        as shown in Kicktipp's own UI — not to be confused with the
+        `community` URL slug (e.g. "wm-tipp-von-mischa"), which is often
+        quite different from the human-readable name.
+        """
+        url = f"{BASE_URL}/{self.community}/tippuebersicht"
+        resp = self.session.get(url, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        title = soup.title.string if soup.title else None
+        if not title:
+            return self.community
+        return title.split(" - ")[0].strip()
+
     def fetch_spieltag_details(self) -> list[SpieltagDetail]:
         """Per-Spieltag breakdown for every completed Spieltag.
 

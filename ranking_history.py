@@ -30,6 +30,7 @@ DATA_DIR = Path(__file__).parent / "data"
 HISTORY_PATH = DATA_DIR / "ranking_history.jsonl"
 STEPS_PATH = DATA_DIR / "ranking_steps.jsonl"
 COMMUNITY_TIPS_PATH = DATA_DIR / "community_tips.jsonl"
+COMMUNITY_NAME_PATH = DATA_DIR / "community_name.json"
 
 
 def _ranked(totals: dict[str, int]) -> dict[str, int]:
@@ -156,6 +157,9 @@ def build_ranking_history(client: KicktippClient) -> tuple[int, int, int]:
     _write(HISTORY_PATH, history)
     _write(STEPS_PATH, steps)
     _write(COMMUNITY_TIPS_PATH, community)
+    COMMUNITY_NAME_PATH.write_text(
+        json.dumps({"name": client.fetch_community_name()}, ensure_ascii=False), encoding="utf-8"
+    )
 
     return len(history), len(steps), len(community)
 

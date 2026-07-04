@@ -11,6 +11,8 @@ falls back to plain files under data/, unchanged.
 
 from __future__ import annotations
 
+import base64
+import hmac
 import json
 import os
 import urllib.error
@@ -21,12 +23,32 @@ from logparse import parse_log
 
 ROOT = Path(__file__).parent
 
+
+def check_basic_auth(auth_header: str | None) -> bool:
+    """Constant-time check of an HTTP Basic Auth header's password against
+    DASHBOARD_PASSWORD (hosted deployment only — unset locally, so local
+    dev is unaffected). Username is ignored: this is a single shared
+    password gate for the whole Tippkreis, not per-user accounts.
+    """
+    expected = os.environ.get("DASHBOARD_PASSWORD")
+    if not expected:
+        return True
+    if not auth_header or not auth_header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(auth_header[len("Basic "):]).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    _, _, password = decoded.partition(":")
+    return hmac.compare_digest(password, expected)
+
 TIPS_PATH = "tips_history.jsonl"
 RANKING_PATH = "ranking_history.jsonl"
 STEPS_PATH = "ranking_steps.jsonl"
 COMMUNITY_TIPS_PATH = "community_tips.jsonl"
 ODDS_PATH = "odds_history.jsonl"
 STATUS_PATH = "status.json"
+COMMUNITY_NAME_PATH = "community_name.json"
 
 BLOB_STORE_ID = os.environ.get("BLOB_STORE_ID")
 BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
@@ -96,6 +118,21 @@ def _read_status() -> dict | None:
         return None
     try:
         return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def _read_community_name() -> str | None:
+    """The Tippkreis's real Kicktipp display name (ranking_history.py writes
+    this from the live page title) — used instead of the "self" player's
+    name, which used to be shown by mistake where the community name
+    belongs (e.g. subtitle read `Community "dernerl"` instead of
+    `Community "WM-Tipp (von Mischa)"`)."""
+    text = _read_data_file(COMMUNITY_NAME_PATH)
+    if not text.strip():
+        return None
+    try:
+        return json.loads(text).get("name")
     except json.JSONDecodeError:
         return None
 
@@ -375,6 +412,7 @@ def build_payload(include_personal: bool = True) -> dict:
         "crazy": build_crazy(),
         "awards": build_awards(),
         "status": _read_status(),
+        "community_name": _read_community_name(),
     }
 
     if not include_personal:

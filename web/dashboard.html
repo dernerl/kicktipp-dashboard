@@ -168,10 +168,10 @@ async function load() {
 function render() {
   const app = document.getElementById("app");
   app.innerHTML = "";
-  const self = (DATA.ranking_history.find(r => r.is_self) || {}).player || "du";
+  const communityName = DATA.community_name || "Kicktipp";
   document.getElementById("subtitle").textContent = DATA.local
-    ? `${DATA.tips.length} Tipps · Community „${self}“`
-    : `Community „${self}“`;
+    ? `${DATA.tips.length} Tipps · ${communityName}`
+    : communityName;
   document.getElementById("refresh").style.display = DATA.local ? "" : "none";
   renderStatusBanner();
   app.appendChild(sectionBump());
