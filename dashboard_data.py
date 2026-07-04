@@ -32,6 +32,24 @@ BLOB_STORE_ID = os.environ.get("BLOB_STORE_ID")
 BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
 
 
+def _normalize_store_id(store_id: str) -> str:
+    """Strip a "store_" prefix, matching @vercel/blob's own normalizeStoreId().
+
+    BLOB_STORE_ID as shown in the Vercel dashboard/CLI includes the "store_"
+    prefix (e.g. "store_4n2HdSyUpFwDLjAR"), but the actual blob hostname
+    (constructBlobUrl in the real SDK) uses just the id *without* that
+    prefix. Using the prefixed form produces a hostname for a store that
+    doesn't exist ("Store ID not found") — this was the root cause of an
+    earlier, unrelated-looking TLS hostname-verification error: the
+    non-existent, underscore-containing hostname just happened to also trip
+    a wildcard-matching quirk in Python's ssl module. The *correct* hostname
+    (below) has no underscore and verifies fine with Python's normal,
+    unmodified TLS verification — no bypass needed at all.
+    """
+    prefix = "store_"
+    return store_id[len(prefix):] if store_id.startswith(prefix) else store_id
+
+
 def _fetch_blob(name: str) -> str | None:
     """Fetch a private Vercel Blob's raw text, or None if Blob isn't configured.
 
@@ -40,7 +58,8 @@ def _fetch_blob(name: str) -> str | None:
     """
     if not (BLOB_STORE_ID and BLOB_READ_WRITE_TOKEN):
         return None
-    url = f"https://{BLOB_STORE_ID}.private.blob.vercel-storage.com/data/{name}"
+    store_id = _normalize_store_id(BLOB_STORE_ID).lower()
+    url = f"https://{store_id}.private.blob.vercel-storage.com/data/{name}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {BLOB_READ_WRITE_TOKEN}"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
