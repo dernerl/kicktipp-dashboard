@@ -11,7 +11,6 @@ falls back to plain files under data/, unchanged.
 
 from __future__ import annotations
 
-import base64
 import hmac
 import json
 import os
@@ -24,22 +23,19 @@ from logparse import parse_log
 ROOT = Path(__file__).parent
 
 
-def check_basic_auth(auth_header: str | None) -> bool:
-    """Constant-time check of an HTTP Basic Auth header's password against
-    DASHBOARD_PASSWORD (hosted deployment only — unset locally, so local
-    dev is unaffected). Username is ignored: this is a single shared
-    password gate for the whole Tippkreis, not per-user accounts.
+def check_password(password: str | None) -> bool:
+    """Constant-time check against DASHBOARD_PASSWORD (hosted deployment
+    only — unset locally, so local dev is unaffected). Checked via a plain
+    custom header (X-Dashboard-Password) rather than HTTP Basic Auth, so the
+    frontend can show its own styled prompt instead of the browser's native
+    username+password dialog — there's no username here, just one shared
+    password for the whole Tippkreis.
     """
     expected = os.environ.get("DASHBOARD_PASSWORD")
     if not expected:
         return True
-    if not auth_header or not auth_header.startswith("Basic "):
+    if not password:
         return False
-    try:
-        decoded = base64.b64decode(auth_header[len("Basic "):]).decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
-        return False
-    _, _, password = decoded.partition(":")
     return hmac.compare_digest(password, expected)
 
 TIPS_PATH = "tips_history.jsonl"

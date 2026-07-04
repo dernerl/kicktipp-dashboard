@@ -140,9 +140,49 @@
   .caret { color: var(--muted); font-size: 11px; }
   .nowrap { white-space: nowrap; }
   .loading { color: var(--muted); padding: 40px; text-align: center; }
+
+  /* --- Password gate --- */
+  .pw-overlay {
+    position: fixed; inset: 0; background: rgba(10,13,17,.94);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+  }
+  .pw-overlay.pw-hidden { display: none; }
+  .pw-card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 36px 32px; width: 300px; text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  .pw-card .pw-icon { font-size: 30px; margin-bottom: 6px; }
+  .pw-card h2 { margin: 0 0 4px; font-size: 17px; }
+  .pw-card p { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+  .pw-card input {
+    width: 100%; padding: 11px 14px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--text); font-size: 14px; margin-bottom: 14px;
+    font-family: inherit;
+  }
+  .pw-card input:focus { outline: none; border-color: var(--accent); }
+  .pw-card button {
+    width: 100%; padding: 11px; border-radius: 9px; border: none;
+    background: var(--accent); color: #1a1400; font-weight: 700; cursor: pointer;
+    font-size: 14px; font-family: inherit;
+  }
+  .pw-card button:hover { filter: brightness(1.08); }
+  .pw-card .pw-error {
+    color: var(--red); font-size: 12.5px; margin-top: 12px; min-height: 16px;
+  }
 </style>
 </head>
 <body>
+<div class="pw-overlay pw-hidden" id="pwOverlay">
+  <div class="pw-card">
+    <div class="pw-icon">⚽</div>
+    <h2>Kicktipp Dashboard</h2>
+    <p>Passwort erforderlich</p>
+    <input type="password" id="pwInput" placeholder="Passwort" autocomplete="current-password">
+    <button id="pwSubmit">Weiter</button>
+    <div class="pw-error" id="pwError"></div>
+  </div>
+</div>
 <header>
   <h1>⚽ Kicktipp Dashboard</h1>
   <span class="sub" id="subtitle">lädt …</span>
@@ -160,10 +200,43 @@ let DATA = null;
 let rafId = null, lastT = null;
 
 async function load() {
-  const r = await fetch("/api/data");
+  const stored = sessionStorage.getItem("dashboardPassword") || "";
+  const headers = stored ? { "X-Dashboard-Password": stored } : {};
+  const r = await fetch("/api/data", { headers });
+  if (r.status === 401) {
+    const hadStored = stored.length > 0;
+    sessionStorage.removeItem("dashboardPassword");
+    showPasswordPrompt(hadStored);
+    return;
+  }
+  hidePasswordPrompt();
   DATA = await r.json();
   render();
 }
+
+function showPasswordPrompt(wasWrong) {
+  document.getElementById("pwOverlay").classList.remove("pw-hidden");
+  document.getElementById("pwError").textContent = wasWrong ? "Falsches Passwort." : "";
+  const input = document.getElementById("pwInput");
+  input.value = "";
+  input.focus();
+}
+
+function hidePasswordPrompt() {
+  document.getElementById("pwOverlay").classList.add("pw-hidden");
+}
+
+function submitPassword() {
+  const pw = document.getElementById("pwInput").value;
+  if (!pw) return;
+  sessionStorage.setItem("dashboardPassword", pw);
+  load();
+}
+
+document.getElementById("pwSubmit").onclick = submitPassword;
+document.getElementById("pwInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") submitPassword();
+});
 
 function render() {
   const app = document.getElementById("app");

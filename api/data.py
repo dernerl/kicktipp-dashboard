@@ -14,16 +14,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dashboard_data import build_payload, check_basic_auth  # noqa: E402
+from dashboard_data import build_payload, check_password  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - http.server API
-        if not check_basic_auth(self.headers.get("Authorization")):
-            body = b"Authentication required"
+        if not check_password(self.headers.get("X-Dashboard-Password")):
+            body = b'{"error": "password required"}'
             self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Basic realm="Kicktipp Dashboard"')
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
