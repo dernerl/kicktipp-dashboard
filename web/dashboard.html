@@ -273,7 +273,7 @@ function sectionBump() {
   const sec = el("section");
   sec.innerHTML = `
     <h2>Positionsverlauf</h2>
-    <p class="section-hint">Wer stand wann auf welchem Platz? Ein Schritt = ein einzelnes Spiel (Start = Bonusfragen). Schieberegler ziehen oder ▶ drücken.</p>
+    <p class="section-hint">Wer stand wann auf welchem Platz? Ein Schritt = ein einzelnes Spiel oder eine aufgelöste Bonusfrage (z.B. Gruppensieger, sobald feststehend). Schieberegler ziehen oder ▶ drücken.</p>
     <div class="panel">
       <div class="chart-wrap">
         <div>
@@ -311,8 +311,10 @@ function competitionRank(arr) {
 
 function bumpModel(includeBonus) {
   let tl = DATA.timeline.slice().sort((a,b)=>a.ordinal-b.ordinal);
-  // the Bonusfragen step (spieltag 0) only makes sense when bonus is counted
-  if (!includeBonus) tl = tl.filter(t => t.spieltag_index !== 0);
+  // Bonusfragen steps (match_index -1, no match attached — the pre-tournament
+  // one plus any later ones like a Gruppensieger resolving mid-tournament)
+  // only make sense when bonus is counted.
+  if (!includeBonus) tl = tl.filter(t => t.match_index !== -1);
   // recompute each step's standings for the chosen mode (with/without bonus)
   const steps = tl.map(t => {
     const standings = t.standings.map(s => ({
@@ -453,7 +455,9 @@ function renderPos(pos) {
 function drawAt(ord) { renderPos(BUMP.ords.indexOf(ord)); }
 
 function stepLabel(step) {
-  if (!step || step.spieltag_index === 0) return "Start · Bonusfragen";
+  if (!step) return "";
+  if (step.spieltag_index === 0) return "Start · Bonusfragen";
+  if (step.match_index === -1) return `Bonusfragen · ${step.spieltag_label}`;
   return `${step.spieltag_index}. Spieltag`;
 }
 

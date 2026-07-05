@@ -1,7 +1,7 @@
 # ADR 0002: Positionsverlauf retroaktiv aus per-Spieltag-Tippübersicht rekonstruieren
 
 **Date:** 2026-06-27
-**Status:** Accepted
+**Status:** Accepted (Bonus-Annahme teilweise korrigiert durch [ADR 0011](0011-bonusfragen-zeitpunkt-der-aufloesung-statt-start.md))
 
 ---
 
