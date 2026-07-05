@@ -1,4 +1,4 @@
-# ADR 0011: Bonusfragen im Positionsverlauf zum Zeitpunkt ihrer Auflösung statt komplett am Start
+# ADR 0011: Bonus nur am aktuellen Rand des Positionsverlaufs, nicht als Zeitpunkt in der Timeline
 
 **Date:** 2026-07-04
 **Status:** Accepted
@@ -9,104 +9,86 @@
 
 ADR 0002 (Positionsverlauf-Rekonstruktion) ging davon aus: „Bonus wird komplett
 vor Spieltag 1 gutgeschrieben (danach konstant)" und rechnete ihn einmalig aus
-Spieltag 1 (`total − Σ per_match`) zurück.
+Spieltag 1 (`total − Σ per_match`) zurück. Das stimmt nicht: Kicktipps
+`Gesamtpunkte`-Spalte auf **jeder** per-Spieltag-Tippübersichtsseite (auch der
+von Spieltag 1) enthält den zum Scrape-Zeitpunkt **aktuellen** Bonus-Stand,
+nicht den zum historischen Zeitpunkt tatsächlich bekannten. Sichtbar wurde das
+am Positionsverlauf selbst: mit Bonus eingerechnet lag `dernerl` von Spieltag 1
+an durchgehend auf Platz 12, ohne Bonus deutlich besser — obwohl der
+Gruppensieger-Bonus (der komplette „B"-Wert bestand nachweislich zu 100 % aus
+korrekt getippten Gruppensiegern) unmöglich schon nach einem Spieltag bekannt
+sein konnte.
 
-Das stimmt nicht für alle Bonusfragen. „Gruppensieger" steht z.B. erst fest,
-wenn die Gruppenphase abgeschlossen ist. Im aktuellen Datenstand (WM 2026,
-48 Teams) zeigte sich das an zwei Stellen:
+**Erster Versuch (verworfen):** Bonus während der Gruppenphase aus dem
+gemeldeten `total` explizit herausrechnen und erst beim ersten K.o.-Spieltag
+gesammelt als ein Schritt gutschreiben. Zwei Probleme zeigten sich in der
+Praxis:
 
-1. **Sprung beim Übergang zur K.o.-Phase.** `ranking_steps.jsonl` stimmte bis
-   Spieltag 10 exakt mit den von Kicktipp gemeldeten Gesamtpunkten überein,
-   sprang dann aber unerklärt:
-   ```
-   Spieltag 10 → 11 (Sechzehntelfinale): Josia 163 → 206  (+43, ohne gespieltes Match)
-   ```
-2. **Der eigentliche Kern des Problems** (vom User anhand des Positionsverlaufs
-   bemerkt: mit Bonus eingerechnet lag `dernerl` von Spieltag 1 an durchgehend
-   auf Platz 12, ohne Bonus deutlich besser — und er erinnerte sich, in der
-   echten Kicktipp-App früh gut platziert gewesen zu sein). Grund: Kicktipps
-   `Gesamtpunkte`-Spalte auf **jeder** per-Spieltag-Tippübersichtsseite
-   (auch der von Spieltag 1) enthält den **aktuellen** Bonus-Stand, nicht
-   den zum historischen Zeitpunkt tatsächlich bekannten. Verifiziert über die
-   separate Bonus-Ansicht (`tippuebersicht?bonus=true`), die pro Bonusfrage
-   die bereits feststehende Antwort zeigt: der komplette "B"-Wert, der
-   scheinbar schon auf Spieltag 1 vorhanden war (z.B. 44 Punkte bei Josia,
-   28 bei dernerl), bestand zu 100 % aus korrekt getippten Gruppensiegern —
-   unmöglich nach nur einem Spieltag bekannt. Kicktipp rechnet diesen Wert
-   rückwirkend in jede Spieltag-Seite ein, statt ihn zeitlich einzufrieren.
+1. **Grafischer Bug:** ohne echte Spiele zwischen Sechzehntelfinale und
+   Achtelfinale lagen deren beide Bonus-Schritte auf der x-Achse fast
+   übereinander — die "ST11"/"ST12"-Beschriftungen überlappten sich sichtbar.
+2. **Fachlich ungenau:** die 12 Gruppen werden nicht alle gleichzeitig
+   entschieden — Gruppe A kann Tage vor Gruppe D feststehen, je nachdem wann
+   ihre Spiele im Spielplan liegen. Ein einziger gebündelter Schritt für „den
+   Gruppensieger-Bonus" beim Übergang zur K.o.-Phase behauptet einen exakten
+   Zeitpunkt, den es so nicht gab (vom User anhand seiner eigenen
+   Tippabgabe-Seite bestätigt: die einzelnen Gruppen waren nachweislich an
+   unterschiedlichen Tagen entschieden).
+
+Eine wirklich korrekte pro-Gruppe-Zeitpunktbestimmung würde die Team-Gruppen-
+Zuordnung aus dem Spielplan rekonstruieren (z.B. über Kicktipp-interne
+Abkürzungscodes, die nicht direkt mit den vollen Teamnamen im Spielplan
+übereinstimmen) — unverhältnismäßig komplex für den Nutzen, und vom User
+explizit als nicht nötig zurückgewiesen.
 
 ## Decision
 
-Zwei Ebenen der Korrektur in `ranking_history.py`:
+Radikal vereinfacht: der scrubbare Positionsverlauf (`ranking_steps.jsonl`)
+wird ausschließlich aus **Spielpunkten** aufgebaut — keine Bonus-Rekonstruktion
+unterwegs, kein Versuch, einen Auflösungszeitpunkt zu erraten. Jeder
+Zeitschritt ist exakt so, wie die Tabelle nach diesem einen Spiel aussehen
+würde, wenn es überhaupt keine Bonusfragen gäbe.
 
-**1. Generischer Abgleich pro Spieltag** (`build_step_rows`): für jeden
-Spieltag wird geprüft, ob der gemeldete `total` zur laufenden Summe passt:
+Der aktuell bereits bekannte Bonus (`letzter gemeldeter Gesamtstand − Σ reine
+Spielpunkte`) wird **einmalig** dem letzten Schritt (dem zuletzt tatsächlich
+gespielten Match) zugeschlagen — als „aktueller Stand inklusive Bonus" statt
+als eigenes Ereignis mit eigenem Zeitpunkt in der Timeline.
 
-```
-newly_resolved = total − running_total_bisher − Σ per_match(dieser Spieltag)
-```
+Der „Bonusfragen einrechnen"-Toggle im Dashboard bleibt bestehen und wirkt
+jetzt spürbar nur auf den letzten Punkt: mit Toggle sieht man den aktuellen
+Stand inkl. Bonus, ohne Toggle den reinen Spielpunkte-Stand — beides über die
+gesamte übrige Historie identisch (weil dort schlicht kein Bonus bekannt war).
 
-Ist die Differenz ≠ 0, bekommt sie einen eigenen Timeline-Step
-(`match_index = -1`, kein Match angehängt), datiert auf den Spieltag, an dem
-sie erstmals sichtbar wird. Das fängt Bonus-Ereignisse ab, die tatsächlich an
-ein bestimmtes Runden-Ende gekoppelt sind (z.B. die gestaffelten
-Halbfinale-Tipp-Punkte, die exakt beim Erreichen von Sechzehntelfinale/
-Achtelfinale auftauchen — real, nicht rückwirkend verzerrt).
-
-**2. Gezielte Korrektur für den Gruppensieger-Bonus**, der (siehe oben)
-*nicht* rundenspezifisch, sondern rückwirkend auf jeder Seite erscheint: eine
-neue Funktion `KicktippClient.fetch_bonus_ranking()` liest die Bonus-Tippüber­
-sicht — sie zeigt pro Bonusfrage (Spalten wie „Gr A", „Gr B", …, „WM", „Tor",
-„HF") die bereits bekannte richtige Antwort (oder „---", falls offen) sowie
-pro Spieler die dafür vergebenen Punkte. `compute_group_bonus()` summiert
-daraus die Punkte aus **bereits entschiedenen** „Gr *"-Fragen je Spieler.
-
-`build_step_rows` zieht diesen Wert während der gesamten Gruppenphase
-(Spieltag-Label passt auf `^\d+\.\s*Spieltag$`) vom generischen Abgleich ab —
-und hebt den Abzug ab dem ersten K.o.-Spieltag wieder auf, sodass der Bonus
-dort in einem Schritt sichtbar wird. Alle anderen, noch offenen Bonusfragen
-(Torschützenteam, Weltmeister) tragen aktuell 0 bei und werden nicht
-gesondert behandelt — sollten sie später auflösen, gilt für sie dieselbe
-Einschränkung (siehe Trade-offs).
-
-Frontend (`web/dashboard.html`): der „Bonusfragen einrechnen"-Toggle filtert
-per `match_index !== -1` statt nur `spieltag_index !== 0`, damit auch später
-aufgelöste Bonusfragen korrekt mit ausgeblendet werden. `stepLabel()` zeigt für
-diese Steps `Bonusfragen · <Spieltag-Label>` statt fälschlich `N. Spieltag`.
+`kicktipp.py`s `fetch_bonus_ranking()`/`parse_bonus_ranking()` (aus dem ersten
+Versuch, um die Gruppensieger-Punkte separat auszulesen) wurden wieder
+entfernt — ungenutzter Code für einen verworfenen Ansatz.
 
 ## Consequences
 
 **Positiv:**
-- Der Positionsverlauf zeigt Bonuspunkte zu dem Zeitpunkt, zu dem sie
-  tatsächlich feststehen — nicht rückwirkend auf Turnierstart projiziert.
-  Verifiziert: die Differenz zwischen Rekonstruktion und Kicktipp-Gesamtstand
-  während der Gruppenphase entspricht jetzt exakt dem noch nicht fälligen
-  Gruppensieger-Bonus (nicht mehr 0, wie fälschlich vorher angenommen); ab dem
-  ersten K.o.-Spieltag ist die Differenz wieder exakt 0.
-- Selbstkorrigierend für alle *rundengebundenen* Bonus-Ereignisse (Schritt 1):
-  jede sonstige Diskrepanz wird automatisch als eigener Bonus-Step sichtbar.
+- Keine falschen Zeitpunkt-Behauptungen mehr: die Timeline zeigt nur, was sie
+  sicher weiß (Spielpunkte je Match), der Bonus wird nur dort gezeigt, wo er
+  unstrittig ist (jetzt, am aktuellen Rand).
+- Grafischer Bug automatisch behoben — keine künstlichen Zusatzschritte mehr,
+  die eng beieinanderliegen können.
+- Deutlich weniger Code (kein Bonus-Tab-Scraping, keine Gruppenphasen-Erkennung
+  per Label-Regex).
 
 **Negativ / Trade-offs:**
-- Die Gruppensieger-Korrektur ist an das Label-Muster „N. Spieltag" für die
-  Gruppenphase gekoppelt — funktioniert für Turniere mit klassischer
-  Gruppenphase + K.o.-Runden (WM/EM), nicht allgemein für reine
-  Rundenwettbewerbe ohne K.o.-Phase (dort gibt es aber auch kein
-  „Gruppensieger"-Bonuskonzept).
-- Torschützenteam/Weltmeister-Bonus wird nicht vorab korrigiert, da aktuell
-  0 (unentschieden). Löst sich das später auf, dürfte derselbe
-  Rückwirkungs-Effekt auftreten (Kicktipp rechnet es vermutlich ebenso
-  rückwirkend in alle Seiten ein) — dann braucht es dieselbe Behandlung wie
-  für die Gruppensieger-Fragen, aktuell nicht implementiert (kein Bedarf,
-  solange der Wert 0 ist).
-- Ein zusätzlicher HTTP-Request pro Lauf (`tippuebersicht?bonus=true`).
-  Schlägt der Request fehl, fällt der Code auf `group_bonus = {}` zurück
-  (Warnung statt Absturz) — dann verhält sich die Rekonstruktion wie vor
-  dieser gezielten Korrektur.
+- Der Toggle wirkt jetzt nur auf den letzten Punkt, nicht über die ganze
+  Historie — wer erwartet, dass „Bonusfragen einrechnen" die komplette Linie
+  verändert, sieht mitten in der Saison keinen Unterschied mehr. Das ist so
+  gewollt (der Unterschied existiert historisch schlicht noch nicht), aber
+  optisch weniger eindrücklich als der (fachlich falsche) alte Verlauf.
+- Kein Versuch mehr, *irgendeinen* Bonus-Zeitpunkt zu zeigen, auch nicht
+  näherungsweise — wer wissen will, wann welche Gruppe feststand, muss selbst
+  in Kicktipp nachschauen.
 
 ## Considered Alternatives
 
 | Option | Bewertet als |
 |--------|--------------|
-| So lassen (ADR 0002), Bonus komplett bei Step 0 | Falsch, sobald eine Bonusfrage nach Spieltag 1 auflöst — der beobachtete Fall, und optisch besonders auffällig (Positionsverlauf "friert" auf falschem Platz ein) |
-| Nur den generischen Pro-Spieltag-Abgleich (Schritt 1) | Fängt rundengebundene Sprünge (Se/Ac) korrekt ab, aber nicht den rückwirkend in *jede* Seite eingerechneten Gruppensieger-Bonus — genau das ursprüngliche Problem hätte weiterbestanden |
-| Bonus-Sprung ignorieren (nur Endstand stimmt) | Verlauf sähe vor dem Sprung systematisch falsch aus relativ zum finalen Rang |
+| Bonus komplett bei Step 0 (ADR 0002, Ursprungszustand) | Falsch, optisch besonders auffällig (Positionsverlauf "friert" auf falschem Platz ein) |
+| Gruppensieger-Bonus gesammelt beim ersten K.o.-Spieltag (erster Fix-Versuch) | Grafischer Bug (überlappende Achsenbeschriftung) + fachlich ungenau, da Gruppen nicht gleichzeitig entschieden werden |
+| Pro Gruppe exakten Auflösungs-Spieltag aus Team-Zugehörigkeit rekonstruieren | Genauer, aber Kicktipps Bonus-Ansicht nutzt Abkürzungscodes ohne direkte Zuordnung zu den vollen Teamnamen im Spielplan; unverhältnismäßiger Aufwand für den Nutzen |
+| So lassen wie hier: Bonus nur am aktuellen Rand | Gewählt — ehrlich über das, was wir wissen, ohne Genauigkeit vorzutäuschen |

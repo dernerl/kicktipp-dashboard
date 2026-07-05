@@ -104,27 +104,6 @@ class SpieltagDetail:
 
 
 @dataclass
-class BonusQuestionColumn:
-    index: int         # matches PlayerBonusRow.per_question's index
-    label: str         # e.g. "Tor", "HF", "Gr A", "WM"
-    resolved: bool      # the actual answer is known (column shows it instead of "---")
-
-
-@dataclass
-class PlayerBonusRow:
-    player: str
-    is_self: bool
-    per_question: list[int]   # points per bonus question, aligned to BonusQuestionColumn.index
-    bonus_total: int          # the "B" (Bonuspunkte) column
-
-
-@dataclass
-class BonusRanking:
-    questions: list[BonusQuestionColumn]
-    players: list[PlayerBonusRow]
-
-
-@dataclass
 class BonusSelect:
     name: str                   # form field name of the <select>
     options: dict[str, str]     # option text → option value (excludes "not tipped")
@@ -309,20 +288,6 @@ class KicktippClient:
                 continue
             details.append(parse_spieltag_detail(r.text, st_idx, label))
         return details
-
-    def fetch_bonus_ranking(self) -> BonusRanking:
-        """Per-Bonusfrage breakdown: which answer is already known, and who got
-        which question right. Unlike the Spieltag-specific Tippübersicht pages,
-        the "B" (Bonus) total on every page always reflects *all* Bonusfragen
-        resolved as of *today* — Kicktipp doesn't freeze it to the historical
-        Spieltag being viewed. This is what lets ranking_history.py figure out
-        which part of that total is real (already known) versus leaking in
-        from a question that can't possibly be decided yet.
-        """
-        url = f"{BASE_URL}/{self.community}/tippuebersicht"
-        resp = self.session.get(url, params={"bonus": "true"}, timeout=15)
-        resp.raise_for_status()
-        return parse_bonus_ranking(resp.text)
 
     def fetch_all_odds(self) -> list[dict]:
         """Scrape 1/X/2 odds for every Spieltag from the Tippabgabe pages.
@@ -677,77 +642,6 @@ def parse_ranking(html: str) -> list[RankingEntry]:
         )
 
     return entries
-
-
-def parse_bonus_ranking(html: str) -> BonusRanking:
-    """Parse the "Tippübersicht • Bonus" page (`tippuebersicht?bonus=true`).
-
-    Structurally identical to the per-Spieltag ranking table, except each
-    "ereignisN" column is a Bonusfrage instead of a match: the header cell's
-    text is "<label> <actual answer>" (e.g. "Gr A MEX", or "Tor ---" while
-    still undecided), and a player's cell is "<their pick>" or "<pick> <pts>"
-    when it was scored.
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    table = soup.find("table", id="ranking")
-    if table is None:
-        return BonusRanking(questions=[], players=[])
-
-    def _ereignis_index(td: Tag) -> int | None:
-        for cls in td.get("class") or []:
-            if cls.startswith("ereignis") and cls != "ereignis":
-                try:
-                    return int(cls[len("ereignis"):])
-                except ValueError:
-                    return None
-        return None
-
-    rows = table.find_all("tr")
-    if not rows:
-        return BonusRanking(questions=[], players=[])
-
-    questions: dict[int, BonusQuestionColumn] = {}
-    for td in rows[0].find_all(["td", "th"]):
-        idx = _ereignis_index(td)
-        if idx is None:
-            continue
-        text = td.get_text(" ", strip=True)
-        label, _, actual = text.rpartition(" ")
-        questions[idx] = BonusQuestionColumn(
-            index=idx, label=label or text, resolved=actual not in ("", "---")
-        )
-    n = len(questions)
-
-    players: list[PlayerBonusRow] = []
-    for row in rows[1:]:
-        name_cell = row.find("td", class_="mg_class")
-        if name_cell is None:
-            continue
-        player = name_cell.get_text(strip=True)
-        if not player:
-            continue
-
-        per_question = [0] * n
-        for td in row.find_all("td"):
-            idx = _ereignis_index(td)
-            if idx is None or idx >= n:
-                continue
-            m = re.search(r"(\d+)$", td.get_text(strip=True))
-            per_question[idx] = int(m.group(1)) if m else 0
-
-        bonus_cell = row.find("td", class_="bonus")
-        bonus_text = (bonus_cell.get_text(strip=True) if bonus_cell else "0").replace(".", "")
-        try:
-            bonus_total = int(bonus_text)
-        except ValueError:
-            bonus_total = 0
-
-        is_self = "treffer" in (row.get("class") or [])
-        players.append(PlayerBonusRow(
-            player=player, is_self=is_self, per_question=per_question, bonus_total=bonus_total
-        ))
-
-    return BonusRanking(questions=sorted(questions.values(), key=lambda q: q.index), players=players)
 
 
 def _spieltag_has_results(html: str) -> bool:

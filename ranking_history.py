@@ -20,14 +20,11 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-from kicktipp import BonusRanking, KicktippClient, SpieltagDetail
-
-_GROUP_STAGE_LABEL = re.compile(r"^\d+\.\s*Spieltag$")
+from kicktipp import KicktippClient, SpieltagDetail
 
 DATA_DIR = Path(__file__).parent / "data"
 HISTORY_PATH = DATA_DIR / "ranking_history.jsonl"
@@ -59,55 +56,33 @@ def build_history_rows(details: list[SpieltagDetail]) -> list[dict]:
     return rows
 
 
-def compute_group_bonus(bonus_ranking: BonusRanking) -> dict[str, int]:
-    """Per-player points from already-decided "Wer gewinnt die Gruppe X?" questions.
-
-    Kicktipp's Bonus tab shows one column per Bonusfrage, each labelled (e.g.
-    "Gr A") with the real-world answer once known ("---" while still open).
-    We only trust questions that are actually resolved — this is what lets
-    build_step_rows tell "genuinely decided" Gruppensieger points apart from
-    Bonusfragen that just haven't resolved yet.
-    """
-    group_idx = [q.index for q in bonus_ranking.questions if q.label.startswith("Gr") and q.resolved]
-    return {p.player: sum(p.per_question[i] for i in group_idx) for p in bonus_ranking.players}
-
-
-def build_step_rows(details: list[SpieltagDetail], group_bonus: dict[str, int] | None = None) -> list[dict]:
+def build_step_rows(details: list[SpieltagDetail]) -> list[dict]:
     """Expand the per-match points into a cumulative, ranked timeline.
 
-    Gesamtpunkte = bonus + Σ match points. Bonus questions don't all resolve
-    at the same time — e.g. "Gruppensieger" only becomes known once the group
-    stage finishes. But Kicktipp's per-Spieltag "Gesamtpunkte" doesn't freeze
-    the bonus component to what was actually known back then: the *current*
-    Gruppensieger bonus leaks into every group-stage Spieltag's total,
-    including Spieltag 1, long before the group stage was actually decided.
-    (Verified: identical bonus value shows up unchanged on Spieltag 1 through
-    the last group Spieltag, and rechecking against the Bonus tab's per-question
-    breakdown shows that value is 100% Gruppensieger points that couldn't
-    possibly be known that early.)
-
-    So during the group stage we subtract `group_bonus` (the Gruppensieger
-    total we independently know is *actually* resolved, from
-    `compute_group_bonus`) out of each Spieltag's reported total before
-    reconciling — cancelling the leak — and stop subtracting the moment we
-    reach the first non-group-stage round, letting it surface there as its
-    own step instead. Any other still-open Bonusfrage (Torschützenteam,
-    Halbfinale-Tipp, Weltmeister) is 0 until it resolves and isn't specially
-    handled — same caveat, deal with it once it actually happens.
+    Gesamtpunkte = bonus + Σ match points. Bonus questions resolve at
+    different, individually unknown times — e.g. each "Gruppensieger" becomes
+    decided whenever that specific group's matches finish, which differs
+    group by group and isn't derivable from what Kicktipp exposes (the
+    per-Spieltag pages don't freeze bonus to what was actually known back
+    then; they always show the *current* bonus, so there's no reliable way
+    to pin an exact Spieltag to it). Rather than guess and risk a wrong
+    timestamp, the scrubbable timeline here is built from match points only —
+    accurate at every single step — and whatever bonus is currently known
+    (Σ per-question points already decided) is added just once, to the
+    latest step, as "current standing including bonus so far". It intentionally
+    does not appear as its own step in the timeline.
     """
     details = sorted(details, key=lambda d: d.spieltag_index)
     if not details:
         return []
 
-    group_bonus = group_bonus or {}
     first = details[0]
     is_self = {p.player: p.is_self for d in details for p in d.players}
     running = {p.player: 0 for p in first.players}
-    bonus = {p.player: 0 for p in first.players}
 
     rows: list[dict] = []
 
-    def emit(ordinal, st_idx, st_label, match_index, match):
+    def emit(ordinal, st_idx, st_label, match_index, match, bonus):
         totals = dict(running)
         ranks = _ranked(totals)
         for player, pts in totals.items():
@@ -127,27 +102,11 @@ def build_step_rows(details: list[SpieltagDetail], group_bonus: dict[str, int] |
                 "is_self": is_self.get(player, False),
             })
 
-    # Step 0: standings from whichever Bonusfragen had genuinely resolved
-    # before Spieltag 1 (normally none, for a Gruppensieger-style bonus).
     ordinal = 0
-    emit(ordinal, 0, "Bonusfragen", -1, None)
+    emit(ordinal, 0, "Bonusfragen", -1, None, bonus={})
 
+    last_step: tuple[int, int, str, int, dict] | None = None
     for d in details:
-        is_group_stage = bool(_GROUP_STAGE_LABEL.match(d.spieltag_label))
-        newly_resolved = {
-            p.player: p.total - running.get(p.player, 0) - sum(p.per_match)
-            for p in d.players
-        }
-        if is_group_stage:
-            for player in newly_resolved:
-                newly_resolved[player] -= group_bonus.get(player, 0)
-        if any(delta for delta in newly_resolved.values()):
-            for player, delta in newly_resolved.items():
-                running[player] = running.get(player, 0) + delta
-                bonus[player] = bonus.get(player, 0) + delta
-            ordinal += 1
-            emit(ordinal, d.spieltag_index, d.spieltag_label, -1, None)
-
         for mi, match in enumerate(d.matches):
             if match["home_goals"] is None:        # not played yet → no step
                 continue
@@ -155,7 +114,21 @@ def build_step_rows(details: list[SpieltagDetail], group_bonus: dict[str, int] |
                 if mi < len(p.per_match):
                     running[p.player] = running.get(p.player, 0) + p.per_match[mi]
             ordinal += 1
-            emit(ordinal, d.spieltag_index, d.spieltag_label, mi, match)
+            emit(ordinal, d.spieltag_index, d.spieltag_label, mi, match, bonus={})
+            last_step = (ordinal, d.spieltag_index, d.spieltag_label, mi, match)
+
+    # Current bonus so far: whatever the latest Spieltag's reported total
+    # doesn't explain via match points alone. Re-emit just the final step
+    # (the last actually-played match) with it folded in, replacing the
+    # bonus-free row written above.
+    last_d = details[-1]
+    current_bonus = {p.player: p.total - running.get(p.player, 0) for p in last_d.players}
+    if last_step and any(current_bonus.values()):
+        final_ordinal, st_idx, st_label, mi, match = last_step
+        rows[:] = [r for r in rows if r["ordinal"] != final_ordinal]
+        for player, extra in current_bonus.items():
+            running[player] = running.get(player, 0) + extra
+        emit(final_ordinal, st_idx, st_label, mi, match, bonus=current_bonus)
 
     return rows
 
@@ -195,19 +168,13 @@ def build_ranking_history(client: KicktippClient) -> tuple[int, int, int]:
     details = client.fetch_spieltag_details()
     DATA_DIR.mkdir(exist_ok=True)
 
-    try:
-        group_bonus = compute_group_bonus(client.fetch_bonus_ranking())
-    except Exception as exc:
-        print(f"Warning: could not fetch Bonus ranking ({exc}); Gruppensieger bonus timing will be approximate")
-        group_bonus = {}
-
     def _write(path, rows):
         with path.open("w", encoding="utf-8") as f:
             for row in rows:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     history = build_history_rows(details)
-    steps = build_step_rows(details, group_bonus)
+    steps = build_step_rows(details)
     community = build_community_tips(details)
     _write(HISTORY_PATH, history)
     _write(STEPS_PATH, steps)
