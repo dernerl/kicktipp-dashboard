@@ -3,6 +3,10 @@
 Automated [Kicktipp](https://www.kicktipp.de/) football tipping bot (LLM
 strategy), score/odds tracking, and a results dashboard (local + hosted).
 
+<img width="1230" height="794" alt="image" src="https://github.com/user-attachments/assets/f6049859-c2c8-4416-94a3-47ff8b3f20e3" />
+<img width="1146" height="498" alt="image" src="https://github.com/user-attachments/assets/6e453219-9355-44f8-804e-f040524e2a15" />
+
+
 > Built on top of [dernerl/kicktipp-mcp](https://github.com/dernerl/kicktipp-mcp)
 > (itself a fork of [Cloudy261/kicktipp-mcp](https://github.com/Cloudy261/kicktipp-mcp)),
 > which provides the Kicktipp HTTP client (`kicktipp.py`) and an MCP server for
