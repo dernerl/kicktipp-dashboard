@@ -313,11 +313,15 @@ def _score_crazy_row(
     return None
 
 
-def build_crazy() -> dict:
+def build_crazy(include_self: bool = True) -> dict:
     """Community-wide crazy tips — hybrid: Buchmacher-Quoten wo vorhanden, sonst Tippkreis.
 
     Joined über (spieltag_index, home, away) = (spieltag_index, home_team, away_team).
     Beide Pfade liefern Craziness ~0..2 → gemeinsam sortierbar.
+
+    ``include_self=False`` (hosted/community payload) strips ``is_self`` from
+    every row — ``_score_crazy_row`` spreads the raw community-tips row
+    (``{**t, ...}``), which carries ``is_self`` straight through otherwise.
     """
     rows = _read_jsonl(COMMUNITY_TIPS_PATH)
     odds_map = _load_odds()
@@ -361,11 +365,21 @@ def build_crazy() -> dict:
             out.append(r)
         return out[:8]
 
-    return {"exact": _distinct(exact), "miss": _distinct(miss)}
+    result = {"exact": _distinct(exact), "miss": _distinct(miss)}
+    if not include_self:
+        for r in result["exact"] + result["miss"]:
+            r["is_self"] = False
+    return result
 
 
-def build_timeline() -> list[dict]:
-    """Group the per-(step × player) rows into one entry per match-step."""
+def build_timeline(include_self: bool = True) -> list[dict]:
+    """Group the per-(step × player) rows into one entry per match-step.
+
+    ``include_self=False`` (hosted/community payload) forces every row's
+    ``is_self`` to False — the "which player is the bot account" highlight
+    only makes sense in your own local dashboard, not in a chart the whole
+    Tippkreis looks at.
+    """
     by_ord: dict[int, list[dict]] = {}
     for r in _read_jsonl(STEPS_PATH):
         by_ord.setdefault(r["ordinal"], []).append(r)
@@ -381,7 +395,8 @@ def build_timeline() -> list[dict]:
             "home": meta["home"], "away": meta["away"], "result": meta["result"],
             "standings": sorted(
                 ({"player": r["player"], "rank": r["rank"], "points": r["points"],
-                  "bonus": r.get("bonus", 0), "is_self": r["is_self"]} for r in rows),
+                  "bonus": r.get("bonus", 0),
+                  "is_self": r["is_self"] and include_self} for r in rows),
                 key=lambda x: x["rank"]),
         })
     return timeline
@@ -401,12 +416,16 @@ def build_payload(include_personal: bool = True) -> dict:
     # our craziness helpers; we only need build_awards at request time).
     from awards import build_awards
 
+    ranking_history = [
+        {**r, "is_self": r["is_self"] and include_personal}
+        for r in _read_jsonl(RANKING_PATH)
+    ]
     payload = {
         "local": include_personal,
-        "ranking_history": _read_jsonl(RANKING_PATH),
-        "timeline": build_timeline(),
-        "crazy": build_crazy(),
-        "awards": build_awards(),
+        "ranking_history": ranking_history,
+        "timeline": build_timeline(include_self=include_personal),
+        "crazy": build_crazy(include_self=include_personal),
+        "awards": build_awards(include_self=include_personal),
         "status": _read_status(),
         "community_name": _read_community_name(),
     }

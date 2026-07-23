@@ -77,11 +77,27 @@ uv run python main.py --strategy llm
 
 Run `uv run python main.py --help` for all options (`--community`, `--debug-html`, …).
 
+Two ways to run this on a schedule instead of by hand — pick one:
+
+| | macOS launchd | GitHub Actions |
+|---|---|---|
+| Where it runs | your Mac, needs to be on | GitHub's cloud, no machine needed |
+| Feeds the **local** dashboard (`dashboard.py`) | yes | yes (writes the same `data/*.jsonl`) |
+| Feeds the **hosted** Vercel dashboard | **no** | yes, via the private Blob store upload step |
+
+If you only ever look at `dashboard.py` on `localhost`, launchd alone is
+enough. If you're also hosting the dashboard on Vercel for others to see,
+you need GitHub Actions — launchd never uploads to Blob, so a hosted
+dashboard fed only by launchd would just sit there with stale/no data.
+Nothing stops you running both at once (e.g. launchd for a laptop you use
+locally, Actions for the always-on hosted copy) — they write the same
+`data/*.jsonl` format.
+
 ### Scheduled runs (macOS launchd)
 
 `com.kicktipp-ai.bot.plist` runs the bot every 6 hours via launchd.
 
-1. Edit the plist and set the correct project path in `ProgramArguments` (the `cd …` line).
+1. Edit the plist and set the correct project path in `ProgramArguments` (the `cd …` line), and the log paths (`StandardOutPath`/`StandardErrorPath`).
 2. Copy it into place and load it:
 
    ```bash
@@ -89,7 +105,7 @@ Run `uv run python main.py --help` for all options (`--community`, `--debug-html
    launchctl load ~/Library/LaunchAgents/com.kicktipp-ai.bot.plist
    ```
 
-Logs are written to `~/Library/Logs/kicktipp-ai.log` (persistent across reboots).
+Logs are written to the path you set above (persistent across reboots).
 Each run starts with a timestamped header:
 
 ```
@@ -103,7 +119,7 @@ Submitted 4 tips.
 Follow the log live:
 
 ```bash
-tail -f ~/Library/Logs/kicktipp-ai.log
+tail -f ~/Library/Logs/kicktipp-ai.log   # or wherever you pointed StandardOutPath
 ```
 
 ### Scheduled runs (GitHub Actions)
@@ -204,11 +220,13 @@ It has four parts:
   Each card shows how rare it was (e.g. "nur 1/12 exakt"). Classified by
   tip-vs-result, independent of the community's (non-standard) points scheme.
 - **Trophäenschrank** — season-wide awards per player (see ADR 0008).
-- **Persönlicher Bereich** (local dashboard only, see below) — every bot tip,
-  newest first, with an outcome label and the result colour-coded by how the
-  tip fared (exact/diff/tendency/miss). Up top: current rank, total points,
-  and hit-rate. Each `llm` tip has an expandable **„Warum?"** panel showing the
-  Claude reasoning parsed from the launchd log.
+- **Persönlicher Bereich** (local dashboard only, see below) — every tip *your*
+  bot submitted (the account in your `.env`/`KICKTIPP_*` secrets), newest
+  first, with an outcome label and the result colour-coded by how the tip
+  fared (exact/diff/tendency/miss). Up top: current rank, total points, and
+  hit-rate. Each `llm` tip has an expandable **„Warum?"** panel showing the
+  Claude reasoning parsed from the local run log (launchd's log file, or the
+  GitHub Actions run log if you used that instead).
 
 The “↻ Tabelle aktualisieren” button re-runs the scrape live. The server is
 stdlib-only (`http.server`) and binds to localhost.

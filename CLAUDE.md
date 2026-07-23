@@ -61,6 +61,16 @@ running and displaying this Tippkreis's automation.
   the frontend — don't reintroduce them into the community-only path even for
   convenience. `web/dashboard.html` renders `sectionPersonal()` only when
   `DATA.local` is true.
+- **`is_self` (which player is the bot's own Kicktipp account) must also be
+  stripped for the hosted payload**, separately from the personal section
+  above — it flows through `build_timeline`, `build_crazy`, `ranking_history`,
+  and `awards.build_awards` (all called *unconditionally*, unlike
+  `tips`/reasoning which are just skipped). Each of those takes an
+  `include_self`/`include_personal` param that forces `is_self` to `False`;
+  wire any new payload field carrying `is_self` through the same way. Bug
+  history: this leaked into the hosted Positionsverlauf/Verrückte
+  Tipps/Trophäenschrank (bot's own name highlighted gold for every viewer)
+  before being caught — see git log around this comment.
 - **Historical standings/tips are reconstructed**, not stored: scraped from each
   per-Spieltag `tippuebersicht` page (table `id="ranking"`, per-match `<sub class="p">`
   point cells). The Gesamtübersicht's `spieltagIndex` param is ignored by Kicktipp.

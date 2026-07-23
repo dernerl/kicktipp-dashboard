@@ -168,11 +168,20 @@ def _card(award: dict, picked, stats: dict, fmt) -> dict | None:
     return card
 
 
-def build_awards() -> list[dict]:
-    """Compute the full medal grid. One card per award, winner(s) + runner-up."""
+def build_awards(include_self: bool = True) -> list[dict]:
+    """Compute the full medal grid. One card per award, winner(s) + runner-up.
+
+    ``include_self=False`` (hosted/community payload) strips the "this
+    winner is the bot account" flag from every stats entry before building
+    cards, so the ⭐BOT marker never shows up in the Tippkreis-wide view —
+    same reasoning as ``dashboard_data.build_timeline``.
+    """
     stats, _self = _per_player_stats()
     if not stats:
         return []
+    if not include_self:
+        for s in stats.values():
+            s["is_self"] = False
 
     max_tips = max(s["tips"] for s in stats.values())
     min_n = math.ceil(0.5 * max_tips)
